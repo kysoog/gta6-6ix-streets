@@ -1,9 +1,11 @@
-// Procedural audio: engine hum, siren, gunshot, impact, crash. No files, no autoplay — the first
-// user gesture starts the AudioContext; after that everything plays freely.
+// Procedural audio: engine hum, siren, gunshot, impact, crash, horn, two radio stations.
+// No files, no autoplay — the first user gesture starts the AudioContext; after that everything plays freely.
 export function createAudio() {
   let ctx = null;
   let started = false;
   let engine = null, siren = null;
+  let radioOsc1 = null, radioOsc2 = null, radioGain = null;
+  let radioStation = 0;
 
   function ensure() {
     if (!ctx) {
@@ -61,6 +63,60 @@ export function createAudio() {
     siren.osc.frequency.setTargetAtTime(freq, ctx.currentTime, 0.03);
   }
 
+  // Siren blip on wanted-level change: rising two-tone wail.
+  function wantedSiren() {
+    if (!ensure()) return;
+    const osc = ctx.createOscillator(); osc.type = 'square';
+    const gain = ctx.createGain(); gain.gain.value = 0;
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start();
+    const t = ctx.currentTime;
+    osc.frequency.setValueAtTime(920, t);
+    osc.frequency.exponentialRampToValueAtTime(1600, t + 0.22);
+    gain.gain.setValueAtTime(0.2, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+    setTimeout(() => { try { osc.stop(); } catch {}; }, 260);
+  }
+
+  // Two radio stations: each a drone from two detuned oscillators retuned on switch.
+  // Station 0 is Neon Nights (sawtooth chorus), station 1 is Vice FM (square reese-ish drone).
+  function radioTone(index) {
+    if (!ensure()) return;
+    radioStation = index === 0 ? 0 : 1;
+    if (!radioOsc1) {
+      const o1 = ctx.createOscillator(); o1.type = 'sawtooth';
+      const o2 = ctx.createOscillator(); o2.type = 'sawtooth';
+      const g = ctx.createGain(); g.gain.value = 0.02;
+      o1.connect(g); o2.connect(g); g.connect(ctx.destination);
+      o1.start(); o2.start();
+      radioOsc1 = o1; radioOsc2 = o2; radioGain = g;
+    }
+    const base = radioStation === 0 ? 165 : 220;
+    radioOsc1.detune.cancelScheduledValues(0);
+    radioOsc2.detune.cancelScheduledValues(0);
+    radioOsc1.frequency.setTargetAtTime(base, ctx.currentTime, 0.1);
+    radioOsc2.frequency.setTargetAtTime(base + 6, ctx.currentTime, 0.1);
+    radioOsc1.detune.value = radioStation === 0 ? -7 : 9;
+    radioOsc2.detune.value = radioStation === 0 ? 7 : -9;
+    radioOsc1.type = radioStation === 0 ? 'sawtooth' : 'square';
+    radioOsc2.type = radioStation === 0 ? 'sawtooth' : 'square';
+  }
+
+  // Horn: short falling sawtooth honk.
+  function horn() {
+    if (!ensure()) return;
+    const osc = ctx.createOscillator(); osc.type = 'sawtooth';
+    const gain = ctx.createGain(); gain.gain.value = 0;
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start();
+    const t = ctx.currentTime;
+    osc.frequency.setValueAtTime(220, t);
+    osc.frequency.exponentialRampToValueAtTime(110, t + 0.35);
+    gain.gain.setValueAtTime(0.15, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+    setTimeout(() => { try { osc.stop(); } catch {}; }, 400);
+  }
+
   // Gunshot: noise burst with fast exponential decay.
   function gunshot() {
     if (!ensure()) return;
@@ -97,5 +153,5 @@ export function createAudio() {
     noise.start();
   }
 
-  return { start, engineLoop, sirenLoop, gunshot, impact, crash, get started() { return started; } };
+  return { start, engineLoop, sirenLoop, wantedSiren, radioTone, horn, gunshot, impact, crash, get started() { return started; } };
 }

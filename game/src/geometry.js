@@ -215,6 +215,16 @@ export function boxUV(width, height, depth, tileU = 8, tileV = 14, yBase = 0) {
   return g;
 }
 
+/** Chamfered box: a box whose top edges are bevelled by `bevel`, built from two prisms
+ *  (a full base block plus a narrower cap block) merged into one geometry. Base at y = yBase,
+ *  centred on x/z. Falls back to a plain box when bevel is zero or wider than the footprint. */
+export function chamferBox(width, height, depth, bevel, tileU = 8, tileV = 14, yBase = 0) {
+  if (bevel <= 0 || bevel * 2 >= Math.min(width, depth)) return boxUV(width, height, depth, tileU, tileV, yBase);
+  const base = prism(width, depth, width - bevel * 2, depth - bevel * 2, height - bevel, tileU, tileV, yBase);
+  const cap = prism(width - bevel * 2, depth - bevel * 2, width - bevel * 2, depth - bevel * 2, bevel, tileU, tileV, yBase + height - bevel);
+  return mergeParts([{ geometry: base }, { geometry: cap }]);
+}
+
 /** A cylinder with its base at y = 0 and UVs running once around its circumference. */
 export function cylinderUV(radiusTop, radiusBottom, height, segments, yBase = 0, openEnded = false) {
   const geometry = new THREE.CylinderGeometry(radiusTop, radiusBottom, height, segments, 1, openEnded);

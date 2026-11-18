@@ -1,6 +1,18 @@
 // Dev screenshot/probe driver: loads any URL in headless chromium, waits for window.__shotReady,
 // optionally waits extra frames (for animation), then saves a JPEG and prints window.__diag.
-//   node tools/dev/shoot.mjs "http://127.0.0.1:8099/dev/probe.html?time=golden" out.jpg [frames]
+//   node tools/dev/shoot.mjs "<url>" <out.jpg> [frames]
+const HELP = `Usage: node tools/dev/shoot.mjs <url> <out.jpg> [frames]
+
+  url     page to load, e.g. "http://127.0.0.1:8099/index.html?shot=play&seed=11"
+  out.jpg destination JPEG path
+  frames  extra frames to wait after __shotReady (default: 0)
+`;
+
+if (process.argv.includes('--help') || process.argv.includes('-h')) {
+  console.log(HELP);
+  process.exit(0);
+}
+
 import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 
@@ -9,12 +21,26 @@ const out = process.argv[3] ?? 'probe.jpg';
 const extraFrames = Number(process.argv[4] ?? 0);
 const width = Number(process.env.W ?? 1280);
 const height = Number(process.env.H ?? 720);
+
+if (!/^https?:\/\//.test(url)) {
+  console.error('shoot: url must be an http(s) URL');
+  process.exit(1);
+}
+if (!out) {
+  console.error('shoot: output path required');
+  process.exit(1);
+}
+if (!Number.isFinite(extraFrames) || extraFrames < 0) {
+  console.error('shoot: frames must be a non-negative number');
+  process.exit(1);
+}
+
 const chrome = '/root/.cache/ms-playwright/chromium-1254/chrome-linux64/chrome';
 
 const child = spawn(chrome, [
   '--headless=new', '--no-sandbox', '--disable-dev-shm-usage', '--hide-scrollbars', '--mute-audio',
   '--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--use-gl=angle',
-  `--window-size=${width},${height}`, '--force-device-scale-factor=1',
+  '--window-size=' + width + ',' + height, '--force-device-scale-factor=1',
   '--remote-debugging-port=0', `--user-data-dir=${process.env.TMPDIR ?? '/tmp'}/dev-${process.pid}`, 'about:blank',
 ], { stdio: ['ignore', 'pipe', 'pipe'] });
 
@@ -30,9 +56,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const deadline = Date.now() + 15000;
 while (devPort === null && Date.now() < deadline) await sleep(40);
 let version = null;
-while (version === null) {
+const vDeadline = Date.now() + 30000;
+while (!version && Date.now() < vDeadline) {
   try { version = await (await fetch(`http://127.0.0.1:${devPort}/json/version`)).json(); } catch { await sleep(60); }
 }
+if (!version) throw new Error('shoot: chrome DevTools version endpoint unreachable');
 const ws = new WebSocket(version.webSocketDebuggerUrl);
 let id = 1;
 const pending = new Map();
@@ -46,7 +74,7 @@ ws.addEventListener('message', (ev) => {
     return;
   }
   if (msg.method === 'Runtime.consoleAPICalled') logs.push(`${msg.params.type}: ${(msg.params.args ?? []).map((a) => a.value ?? a.description ?? a.type).join(' ')}`);
-  if (msg.method === 'Runtime.exceptionThrown') logs.push(`EXCEPTION: ${(msg.params.exceptionDetails?.exception?.description ?? msg.params.exceptionDetails?.text ?? '').split('\n').slice(0,6).join(' | ')}`);
+  if (msg.method === 'Runtime.exceptionThrown') logs.push(`EXCEPTION: ${(msg.params.exceptionDetails?.exception?.description ?? msg.params.exceptionDetails?.text ?? '').split('\n').slice(0, 6).join(' | ')}`);
   if (msg.method === 'Log.entryAdded' && msg.params.entry.level !== 'verbose') logs.push(`${msg.params.entry.level}: ${msg.params.entry.text}`);
 });
 const send = (method, params = {}, sessionId) => {

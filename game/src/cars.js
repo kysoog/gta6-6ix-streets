@@ -3,7 +3,7 @@
 // traffic costs 3 draw calls per type; per-instance colour and matrices are streamed each frame.
 import * as THREE from 'three';
 import { VEHICLE, LANES, CITY } from './config.js';
-import { cylinderUV, boxUV, instanced } from './geometry.js';
+import { cylinderUV, boxUV, instanced, chamferBox } from './geometry.js';
 
 export const CAR_TYPES = [
   { name: 'sedan', length: 4.4, width: 1.7, height: 1.45, cabin: 1.35, hood: 1.55, boot: 1.1 },
@@ -35,7 +35,12 @@ function carTypeMesh(type, count) {
   const cabinFront = zFront - hoodL, cabinRear = zRear + bootL;
   const beltline = 0.62;
   box(-w / 2, w / 2, 0.16, beltline, zRear, zFront);
-  box(-w / 2 + 0.1, w / 2 - 0.1, beltline, cabinH, cabinRear, cabinFront);
+  // Cabin as a chamfered box: the roof edge reads instead of disappearing under backface culling at a distance.
+  const cabinGeo = chamferBox(w - 0.2, cabinH - beltline, cabinFront - cabinRear, 0.12);
+  const cab = cabinGeo.attributes.position.array;
+  for (let i = 0; i < cab.length; i += 3) {
+    bp.push(-w / 2 + 0.1 + cab[i], beltline + cab[i + 1], cabinRear + cab[i + 2]);
+  }
   const bodyGeo = new THREE.BufferGeometry();
   bodyGeo.setAttribute('position', new THREE.Float32BufferAttribute(bp, 3));
   bodyGeo.computeVertexNormals();
@@ -76,6 +81,20 @@ function carTypeMesh(type, count) {
   // light() is authored facing +z with no z offset baked in any more.
   light(-w / 2 + 0.24, zRear - 0.09); light(w / 2 - 0.24, zRear - 0.09);
   light(-w / 2 + 0.24, zFront + 0.09); light(w / 2 - 0.24, zFront + 0.09);
+  // Headlight glow quads in front of each headlight: additive, depthWrite off, so oncoming
+  // traffic still reads at dusk when the headlight quad itself is nearly edge-on.
+  const headPts = [];
+  const headLight = (x) => {
+    const h = 0.28;
+    headPts.push(x - h, 0.42, zFront + 0.14, x + h, 0.42, zFront + 0.14, x + h, 0.66, zFront + 0.14,
+      x - h, 0.42, zFront + 0.14, x + h, 0.66, zFront + 0.14, x - h, 0.66, zFront + 0.14);
+  };
+  headLight(-w / 2 + 0.24); headLight(w / 2 - 0.24);
+  const headGeo = new THREE.BufferGeometry();
+  headGeo.setAttribute('position', new THREE.Float32BufferAttribute(headPts, 3));
+  headGeo.computeVertexNormals();
+  const headGlow = new THREE.MeshBasicMaterial({ color: 0xfff4ea, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
+
   const lightGeo = new THREE.BufferGeometry();
   lightGeo.setAttribute('position', new THREE.Float32BufferAttribute(lightPts, 3));
   lightGeo.computeVertexNormals();
@@ -96,7 +115,7 @@ function carTypeMesh(type, count) {
   const lightsMesh = instanced(lightGeo, glow, Array(count).fill(new THREE.Matrix4()));
   bodies.castShadow = true; bodies.receiveShadow = true;
   trims.castShadow = true; trims.receiveShadow = true;
-  return { bodies, trims, lights: lightsMesh, type, paint, count };
+  return { bodies, trims, lights: lightsMesh, headlights, type, paint, count };
 }
 
 /** Simulated car state (no three.js here — physics first, render second). */
@@ -114,14 +133,14 @@ export class Cars {
   constructor() {
     this.types = CAR_TYPES.map((type, i) => {
       const mesh = carTypeMesh(type, 40);
-      mesh.bodies.visible = false; mesh.trims.visible = false; mesh.lights.visible = false;
+      mesh.bodies.visible = false; mesh.trims.visible = false; mesh.lights.visible = false; mesh.headlights.visible = false;
       return mesh;
     });
     this.cars = [];
     this.nextId = 0;
     this.group = new THREE.Group();
     this.group.name = 'cars';
-    for (const mesh of this.types) this.group.add(mesh.bodies, mesh.trims, mesh.lights);
+    for (const mesh of this.types) this.group.add(mesh.bodies, mesh.trims, mesh.lights, mesh.headlights);
   }
 
   spawn(typeIndex, x, z, yaw, speed, lane = 0, police = false) {
@@ -164,18 +183,20 @@ export class Cars {
       mesh.bodies.count = n;
       mesh.trims.count = n;
       mesh.lights.count = n;
-      mesh.bodies.visible = on; mesh.trims.visible = on; mesh.lights.visible = on;
+      mesh.bodies.visible = on; mesh.trims.visible = on; mesh.lights.visible = on; mesh.headlights.visible = on;
       if (!on) continue;
       for (let i = 0; i < bodies.length; i += 1) {
         mesh.bodies.setMatrixAt(i, bodies[i]);
         mesh.trims.setMatrixAt(i, trims[i]);
         mesh.lights.setMatrixAt(i, lights[i]);
+        mesh.headlights.setMatrixAt(i, lights[i]);
         mesh.bodies.setColorAt(i, colors[i]);
       }
       mesh.bodies.instanceMatrix.needsUpdate = true;
       if (mesh.bodies.instanceColor) mesh.bodies.instanceColor.needsUpdate = true;
       mesh.trims.instanceMatrix.needsUpdate = true;
       mesh.lights.instanceMatrix.needsUpdate = true;
+      mesh.headlights.instanceMatrix.needsUpdate = true;
     }
   }
 

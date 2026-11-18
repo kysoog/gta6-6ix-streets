@@ -1,5 +1,17 @@
 // Dev probe: loads a page from game/ in headless chromium, waits for __shotReady, then samples
-// window.__fps, __diag and any console errors. `node tools/probe.mjs "?shot=play&seed=1" [ms]`
+// window.__fps, __diag and any console errors. `node tools/probe.mjs [root] [query] [sampleMs]`
+const HELP = `Usage: node tools/probe.mjs [root] [query] [sampleMs]
+
+  root       directory to serve from (default: game)
+  query      URL path + query, e.g. "?shot=play&seed=1" (default: "")
+  sampleMs   how long to sample fps, ms (default: 2000)
+`;
+
+if (process.argv.includes('--help') || process.argv.includes('-h')) {
+  console.log(HELP);
+  process.exit(0);
+}
+
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { existsSync, readFileSync } from 'node:fs';
@@ -10,6 +22,16 @@ const query = process.argv[3] ?? '';
 const sampleMs = Number(process.argv[4] ?? 2000);
 const width = Number(process.env.W ?? 1280);
 const height = Number(process.env.H ?? 800);
+
+if (!existsSync(root)) {
+  console.error(`probe: root does not exist: ${root}`);
+  process.exit(1);
+}
+if (!Number.isFinite(sampleMs) || sampleMs <= 0) {
+  console.error('probe: sampleMs must be a positive number');
+  process.exit(1);
+}
+
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.wasm': 'application/wasm' };
 
 const server = createServer((req, res) => {
@@ -31,7 +53,7 @@ const chrome = '/root/.cache/ms-playwright/chromium-1254/chrome-linux64/chrome';
 const child = spawn(chrome, [
   '--headless=new', '--no-sandbox', '--disable-dev-shm-usage', '--hide-scrollbars', '--mute-audio',
   '--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--use-gl=angle',
-  `--window-size=${width},${height}`, '--force-device-scale-factor=1',
+  '--window-size=' + width + ',' + height, '--force-device-scale-factor=1',
   '--remote-debugging-port=0', `--user-data-dir=${process.env.TMPDIR ?? '/tmp'}/probe-${process.pid}`, 'about:blank',
 ], { stdio: ['ignore', 'pipe', 'pipe'] });
 
@@ -46,9 +68,11 @@ child.stderr.on('data', (c) => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 while (devPort === null) await sleep(40);
 let version = null;
-while (!version) {
+const vDeadline = Date.now() + 30000;
+while (!version && Date.now() < vDeadline) {
   try { version = await (await fetch(`http://127.0.0.1:${devPort}/json/version`)).json(); } catch { await sleep(60); }
 }
+if (!version) throw new Error('probe: chrome DevTools version endpoint unreachable');
 const ws = new WebSocket(version.webSocketDebuggerUrl);
 let id = 1;
 const pending = new Map();

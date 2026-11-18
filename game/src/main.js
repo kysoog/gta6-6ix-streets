@@ -72,6 +72,7 @@ hud.appendChild(wasted);
 // ---------- simulation step ----------
 let lastTime = performance.now();
 let delta = 0;
+let dtEma = 0;
 
 function simStep(dt, shotInput) {
   world.tick(dt);
@@ -83,9 +84,19 @@ function simStep(dt, shotInput) {
   world.updatePolice(dt);
   world.updateCombat(dt);
   world.updateWanted(dt);
+  audioFromInput(world, curInput);
 }
 
 let shotFrame = 0;
+let lastWanted = 0;
+let station = 0;
+
+function audioFromInput(world, curInput) {
+  if (world.state.wanted > lastWanted) { audio.wantedSiren(); lastWanted = world.state.wanted; }
+  else { lastWanted = world.state.wanted; }
+  if (curInput.justHorn) audio.horn();
+  if (curInput.justRadio) { station = (station + 1) & 1; audio.radioTone(station); }
+}
 
 function frame(now) {
   if (!audioStarted) { audio.start(); audioStarted = true; }
@@ -94,6 +105,7 @@ function frame(now) {
   window.__trace = window.__trace || []; if (window.__trace.length < 12) window.__trace.push([+dt.toFixed(4), +(world.player.inCar?.x ?? 0).toFixed(1), +(world.player.inCar?.speed ?? 0).toFixed(1)]);
   lastTime = now;
   delta += dt;
+  dtEma = dtEma * 0.9 + dt * 0.1;
 
   const doShot = () => {
     // Deterministic: one fixed step per frame, never scaled by wall-clock. Headless
@@ -110,6 +122,7 @@ function frame(now) {
     syncDrops(world.drops);
     syncPlayer(world, st);
     updateHUD(world.state, world, st);
+    render.setDebug(`dt ${(st * 1000).toFixed(0)}ms  ema ${(dtEma * 1000).toFixed(0)}ms`);
     drawMinimap(world, city);
     renderer.render(scene, camera);
   };
@@ -141,6 +154,7 @@ function frame(now) {
   }
 
   updateHUD(world.state, world, STEP);
+  render.setDebug(`dt ${(STEP * 1000).toFixed(0)}ms  ema ${(dtEma * 1000).toFixed(0)}ms`);
   drawMinimap(world, city);
   renderer.render(scene, camera);
 }
@@ -178,7 +192,7 @@ window.addEventListener('keydown', onKeyPause);
 
 function restart() {
   world.player.health = PLAYER.maxHealth;
-  world.player.x = 16; world.player.z = -40; world.player.yaw = 0;
+  world.player.x = -32; world.player.z = -62; world.player.yaw = 0; // centreline of the -32 avenue
   world.player.inCar = null;
   world.state.mode = 'onfoot';
   world.state.wanted = 0;

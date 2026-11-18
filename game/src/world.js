@@ -11,6 +11,11 @@ export function createWorld(city, trafficRoutes) {
   const pedRoutes = city.pedRoutes.slice();
   const cars = new Cars();
   const peds = [];
+  // Budget: one instanced draw call draws every ped (PEDS.count = 44), so spawning is a fixed
+  // global budget, and each block is capped at PEDS_PER_BLOCK so a single block can never
+  // monopolise the instanced mesh while another block stays empty.
+  const PEDS_PER_BLOCK = 6;
+  const perBlock = new Array(pedRoutes.length).fill(0);
   const cops = [];
   const shots = [];
   const drops = [];
@@ -67,14 +72,22 @@ export function createWorld(city, trafficRoutes) {
 
   // ---------- pedestrians ----------
   function spawnPed() {
-    const route = pedRoutes[Math.floor(Math.random() * pedRoutes.length)];
-    const start = route[Math.floor(Math.random() * route.length)];
-    peds.push({
-      x: start.x, z: start.z, yaw: Math.random() * Math.PI * 2, speed: PEDS.walk,
-      route, routeIndex: Math.floor(Math.random() * route.length),
-      state: 'walk', panic: 0, health: 40, team: TEAM.PED, radius: 0.34,
-      money: Math.floor(15 * (0.7 + Math.random() * 0.9)),
-    });
+    const attempts = pedRoutes.length * 4;
+    for (let a = 0; a < attempts; a += 1) {
+      const ri = Math.floor(Math.random() * pedRoutes.length);
+      if (perBlock[ri] >= PEDS_PER_BLOCK) continue; // this block's ped budget is already spent
+      perBlock[ri] += 1;
+      const route = pedRoutes[ri];
+      const start = route[Math.floor(Math.random() * route.length)];
+      peds.push({
+        x: start.x, z: start.z, yaw: Math.random() * Math.PI * 2, speed: PEDS.walk,
+        route, routeIndex: ri,
+        state: 'walk', panic: 0, health: 40, team: TEAM.PED, radius: 0.34,
+        money: Math.floor(15 * (0.7 + Math.random() * 0.9)),
+      });
+      return;
+    }
+    // Every block's cap reached: the ped budget is spent.
   }
   for (let i = 0; i < PEDS.count; i += 1) spawnPed();
 
@@ -283,7 +296,8 @@ export function createWorld(city, trafficRoutes) {
     state.wanted = clamp(state.wanted + amount, 0, WANTED.max);
     if (state.wanted > before) {
       message(`Wanted level ${state.wanted}\u2605`);
-      if (state.wanted === 1) state.wantedDecayAt = time + WANTED.evadeBase;
+      audio.wantedSiren();
+      if (state.wanted === 1) state.wantedDecayAt = time + WANTED.decayBase;
     }
   }
 
@@ -295,7 +309,7 @@ export function createWorld(city, trafficRoutes) {
       return Math.hypot(dx, dz) < 45;
     });
     if (!inSight && time > state.wantedDecayAt) {
-      state.wantedDecayAt = time + WANTED.evadeBase * (1 + state.wanted * 0.3);
+      state.wantedDecayAt = time + WANTED.decayBase * (1 + state.wanted * WANTED.decayPerStar);
       state.wanted = Math.max(0, state.wanted - 1);
       if (state.wanted === 0) message('Lost the heat.');
     }
@@ -341,7 +355,7 @@ export function createWorld(city, trafficRoutes) {
     if (state.mode === 'dead') {
       if (time > state.respawnAt) {
         player.health = PLAYER.maxHealth;
-        player.x = 16; player.z = -40; player.yaw = 0;
+        player.x = -32; player.z = -62; player.yaw = 0; // centreline of the -32 avenue
         state.mode = 'onfoot'; state.wanted = 0;
         message('Back on the street.');
       }

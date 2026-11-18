@@ -16,6 +16,8 @@ export function createRenderer(canvas, onMessage) {
   renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.bias = -0.0004;
+  renderer.shadowMap.normalBias = 0.02;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
 
@@ -58,7 +60,7 @@ export function createRenderer(canvas, onMessage) {
   }
 
   const money = document.createElement('div');
-  money.style.cssText = 'position:absolute;right:18px;top:16px;font-size:20px;font-variant-numeric:tabular-nums;';
+  money.style.cssText = 'position:absolute;right:18px;top:16px;font-size:20px;font-variant-numeric:tabular-nums;text-shadow:0 2px 4px #000;';
   money.textContent = '$250';
 
   const mode = document.createElement('div');
@@ -73,8 +75,13 @@ export function createRenderer(canvas, onMessage) {
   messages.style.cssText = 'position:absolute;left:16px;bottom:130px;width:300px;font-size:13px;line-height:1.55;opacity:0.95;';
   messages.innerHTML = '';
 
+  // "Shots fired" transient: flashes when a shot lands, fades over ~1.2 s.
+  const shotsFired = document.createElement('div');
+  shotsFired.style.cssText = 'position:absolute;left:50%;transform:translateX(-50%);top:10px;font-size:19px;font-weight:800;letter-spacing:0.25em;text-transform:uppercase;color:#f0c53c;text-shadow:0 0 22px rgba(240,197,60,0.75),0 2px 4px #000;opacity:0;pointer-events:none;';
+  shotsFired.textContent = 'SHOTS FIRED';
+
   const ticker = document.createElement('div');
-  ticker.style.cssText = 'position:absolute;left:0;right:0;bottom:22px;font-size:12px;opacity:0.75;white-space:nowrap;padding-left:220px;';
+  ticker.style.cssText = 'position:absolute;left:0;right:0;bottom:22px;font-size:12px;opacity:0.75;white-space:nowrap;padding-left:220px;text-shadow:0 1px 3px #000;';
   ticker.textContent = 'VICE FM   |   "NEON NIGHTS" — THE HAUTE   |   NEXT: TRAFFIC JAM   |   CALL 555-0198';
 
   const minimapWrap = document.createElement('div');
@@ -94,15 +101,23 @@ export function createRenderer(canvas, onMessage) {
   overlay.appendChild(big); overlay.appendChild(sub);
   hud.appendChild(overlay);
 
-  for (const el of [wantedRow, money, mode, mission, messages, ticker, minimapWrap]) hud.appendChild(el);
+  const debugEl = document.createElement('div');
+  debugEl.style.cssText = 'position:absolute;right:10px;bottom:10px;font-size:11px;line-height:1.4;opacity:0.5;text-align:right;text-shadow:0 1px 2px #000;';
+  debugEl.textContent = '';
+  hud.appendChild(debugEl);
+
+  for (const el of [wantedRow, money, mode, mission, messages, ticker, shotsFired, minimapWrap]) hud.appendChild(el);
 
   let tickerX = 0;
+  let shotsFade = 0;
 
   function updateHUD(state, world, dt) {
     for (let i = 0; i < WANTED.max; i += 1) {
+      const pulse = 1 + Math.sin(Date.now() * 0.008) * 0.14;
       stars[i].textContent = i < state.wanted ? '\u2605' : '\u2606';
       stars[i].style.color = i < state.wanted ? '#f0c53c' : 'rgba(246,241,230,0.35)';
       stars[i].style.textShadow = i < state.wanted ? '0 0 14px #f0c53c, 0 0 28px rgba(240,197,60,0.45)' : '0 0 10px rgba(255,61,90,0)';
+      stars[i].style.transform = `scale(${i < state.wanted ? pulse : 1})`;
     }
     money.textContent = `$${Math.floor(state.money)}`;
     mode.textContent = world.player.inCar ? 'DRIVING — CRUISER' : 'ON FOOT — PISTOL';
@@ -113,6 +128,11 @@ export function createRenderer(canvas, onMessage) {
     // age messages
     state.messages.forEach((m) => { m.t += dt; });
     state.messages = state.messages.filter((m) => m.t < 4);
+
+    // "Shots fired" transient: flash, then fade over ~1.2 s.
+    if (state.messages.some((m) => m.text === 'Shots fired.')) shotsFade = 1;
+    shotsFade = Math.max(0, shotsFade - dt / 1.2);
+    shotsFired.style.opacity = String(shotsFade);
 
     tickerX = (tickerX + 0.5) % 260;
     ticker.style.paddingLeft = `${220 - tickerX}px`;
@@ -339,5 +359,6 @@ export function createRenderer(canvas, onMessage) {
       camera.updateProjectionMatrix();
     },
     announce(text) { status.textContent = text; if (onMessage) onMessage(text); },
+    setDebug(text) { debugEl.textContent = text; },
   };
 }

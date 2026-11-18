@@ -9,7 +9,7 @@
 //   pavement each side; east of x = 108.5 the sand runs to the surf at 134.
 import * as THREE from 'three';
 import { CITY, PALETTE, VEHICLE } from './config.js';
-import { boxUV, prism, cylinderUV, groundQuad, instanced, mergeParts, transformMatrix } from './geometry.js';
+import { boxUV, prism, cylinderUV, groundQuad, instanced, mergeParts, transformMatrix, placed } from './geometry.js';
 import { addBuilding, fillBlock, facadeMaterial, FACADE_TINTS } from './buildings.js';
 import {
   asphaltTexture, sidewalkTexture, sandTexture, waterTexture, concreteTexture,
@@ -460,6 +460,20 @@ function buildFurniture(parts, random, material) {
     color: 0xfff3d6, emissive: 0xffe0a8, emissiveIntensity: 1.6, roughness: 0.4, metalness: 0.1,
   });
   meshes.push(instanced(headGeometry, headMaterial, headMatrices.map((m) => m.clone().multiply(transformMatrix(0.9, 0, 0)))));
+
+  // One flat additive light pool per boulevard lamp on the road: radius ~2.2 m, sitting just
+  // above the tarmac (y = 0.02) so the boulevard reads as lit at dusk without per-pixel lighting.
+  const poolParts = [];
+  for (const spot of lampSpots) {
+    poolParts.push({ geometry: placed(new THREE.PlaneGeometry(4.4, 4.4), spot.x, 0.02, spot.z, -Math.PI / 2) });
+  }
+  const poolGeometry = mergeParts(poolParts);
+  const poolMaterial = new THREE.MeshBasicMaterial({
+    color: 0xfff3d6, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
+  });
+  const pools = new THREE.Mesh(poolGeometry, poolMaterial);
+  pools.frustumCulled = false;
+  meshes.push(pools);
 
   // Hydrants: bright coral, a dot of colour on every corner.
   for (const block of cityBlocks()) {

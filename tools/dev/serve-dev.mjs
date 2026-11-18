@@ -1,13 +1,29 @@
 // Dev static server: serves the repo's game/ at /, plus tools/dev/ pages under /dev/, with an
 // import map injected into dev pages so they can import "three" like the game does. Not shipped.
+//   node tools/dev/serve-dev.mjs [port]
+const HELP = `Usage: node tools/dev/serve-dev.mjs [port]
+
+  port  localhost port to serve on (default: 8099)
+`;
+
+if (process.argv.includes('--help') || process.argv.includes('-h')) {
+  console.log(HELP);
+  process.exit(0);
+}
+
 import { createServer } from 'node:http';
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const port = Number(process.argv[2] ?? 8099);
+if (!Number.isFinite(port) || port < 1024 || port > 65535) {
+  console.error(`serve-dev: invalid port: ${process.argv[2]}`);
+  process.exit(1);
+}
+
 const root = resolve(fileURLToPath(new URL('../../game', import.meta.url)));
 const devRoot = resolve(fileURLToPath(new URL('./', import.meta.url)));
-const port = Number(process.argv[2] ?? 8099);
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8',

@@ -164,6 +164,20 @@ export function addBuilding(parts, signs, colliders, spec, random) {
     addRoof(g);
   }
 
+  // AC bank: two condensing units on a plinth — the detail that makes a roof read as plant.
+  if (random() < 0.75) {
+    const acW = 1.4 + random() * 1.0, acD = 1.1 + random() * 0.9;
+    const bx = (random() - 0.5) * Math.max(1, w - acW - 3);
+    const bz = (random() - 0.5) * Math.max(1, d - acD - 3);
+    const plinth = boxUV(acW + 0.4, 0.22, acD + 0.4, 2, 2, topY + parapetH * 0.2 + 0.02);
+    plinth.translate(bx, 0, bz); plinth.applyMatrix4(world); addRoof(plinth);
+    const unit = boxUV(acW * 0.5, 0.95, acD * 0.5, 2, 2, topY + parapetH * 0.2 + 0.24);
+    unit.translate(bx, 0, bz); unit.applyMatrix4(world); addRoof(unit);
+    // Vent stack beside it.
+    const vent = boxUV(0.6, 1.4, 0.6, 2, 2, topY + parapetH * 0.2 + 1.3);
+    vent.translate(bx + acW * 0.45, 0, bz); vent.applyMatrix4(world); addRoof(vent);
+  }
+
   if (floors >= 4) {
     const tank = cylinderUV(1.5, 1.5, 2.6, 12, topY + 1.4);
     tank.translate((random() - 0.5) * (w * 0.4), 0, (random() - 0.5) * (d * 0.4));
@@ -275,6 +289,9 @@ export function fillBlock(parts, signs, colliders, block, random, district) {
   ];
   const density = distanceFrom(distanceToWater(centreX, centreZ)) > 60 ? 0 : district === 'sprawl' ? 1 : random() < 0.5 ? 1 : 2;
   const template = templates[Math.min(templates.length - 1, density)];
+  // One cohesive facade palette per block so the block reads as a single development:
+  // every building draws its tint from this block-level pick, with occasional offset.
+  const blockTint = PALETTE.wall[(block.ix * 7 + block.iz * 13 + Math.floor(random() * 3)) % PALETTE.wall.length];
   const facing = Math.abs(centreX) < Math.abs(centreZ) || centreX < 0 ? (centreZ > 0 ? 2 : 0) : centreX > 0 ? 3 : 1;
 
   if (template.count === 1) {
@@ -287,7 +304,7 @@ export function fillBlock(parts, signs, colliders, block, random, district) {
       w,
       d,
       floors: template.floors,
-      tint: PALETTE.wall[Math.floor(random() * PALETTE.wall.length)],
+      tint: blockTint,
       style,
       facing,
       signText: signName(random, style),
@@ -310,7 +327,7 @@ export function fillBlock(parts, signs, colliders, block, random, district) {
       w: along === 'x' ? bw : Math.min(width - 2, bw),
       d: along === 'x' ? Math.min(depth - 2, bd) : bd,
       floors: Math.max(2, template.floors + Math.floor(random() * 3) - 1),
-      tint: PALETTE.wall[Math.floor(random() * PALETTE.wall.length)],
+      tint: i % 3 === 0 ? blockTint : PALETTE.wall[(PALETTE.wall.indexOf(blockTint) + 1 + Math.floor(random() * (PALETTE.wall.length - 1))) % PALETTE.wall.length],
       style,
       facing,
       signText: signName(random, style),

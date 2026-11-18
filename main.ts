@@ -11,14 +11,28 @@
 // Serve it locally with `node serve.ts`, then open http://localhost:8080.
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
+//
+//   node main.ts --check          validate the three dossier screenshots exist and are under 256 KiB
 
-import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+
+if (process.argv.includes('--check')) {
+  const shots = ['01-start.jpg', '02-play.jpg', '03-end.jpg'].map((name) => join(here, 'screenshots', name));
+  let ok = true;
+  for (const shot of shots) {
+    if (!existsSync(shot)) { console.error(`missing screenshot: ${shot}`); ok = false; continue; }
+    const size = statSync(shot).size;
+    console.log(`${shot} ${size} bytes ${size <= 262144 ? 'under 256 KiB' : 'OVER 256 KiB'}`);
+    if (size > 262144) ok = false;
+  }
+  process.exit(ok ? 0 : 1);
+}
 
 mkdirSync(out, { recursive: true });
 cpSync(join(here, 'game'), join(out, 'game'), { recursive: true });

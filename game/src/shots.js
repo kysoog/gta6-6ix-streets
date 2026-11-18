@@ -42,9 +42,9 @@ export function makeShots(world, input, renderer, scene, camera, sky, announce) 
     let frame = 0;
     const player = world.player;
     // Put the player in a cruiser mid-chase so the shot reads as gameplay at once.
-    // Spawn on the -32 avenue centre lane, facing down the road. (0,-48) is inside a block,
-  // so the chase cam opened against a facade and the car was never on tarmac.
-  const car = world.cars.spawn(3, -28, -62, 0, 22, 4, true);
+    // Spawn on the -32 avenue centreline, facing down the road. Off-centre the chase cam
+    // opened against a facade and the car was never on tarmac.
+    const car = world.cars.spawn(3, -32, -62, 0, 22, 0, true);
     world.enterCar(car);
     input.state.forward = true;
     let steerDir = 1;
@@ -66,7 +66,7 @@ export function makeShots(world, input, renderer, scene, camera, sky, announce) 
         if (frame >= SETTLE.play) window.__shotReady = true;
       },
       exit() {
-        input.forward = false; input.left = false; input.right = false;
+        input.state.forward = false; input.state.left = false; input.state.right = false;
         world.exitCar();
       },
     };
