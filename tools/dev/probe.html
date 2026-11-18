@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Vice Meridian — world probe (dev only)</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0e17; overflow: hidden; }
+  #c { display: block; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script type="module">
+// Dev harness (never shipped in game/): renders the city from a fixed camera through the real
+// city builder and reports draw calls, triangles and the scene graph, so a geometry change can be
+// judged without eyes.
+import * as THREE from 'three';
+import { createRandom } from '/src/rng.js';
+import { buildCity } from '/src/city.js';
+import { createSky } from '/src/sky.js';
+
+const params = new URLSearchParams(location.search);
+const preset = params.get('time') ?? 'golden';
+const seed = Number.parseInt(params.get('seed') ?? '1', 10);
+const eye = (params.get('eye') ?? '0,16,62').split(',').map(Number);
+const look = (params.get('look') ?? '0,2,-20').split(',').map(Number);
+const fov = Number(params.get('fov') ?? 52);
+
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(1);
+renderer.setSize(window.innerWidth, window.innerHeight, false);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = Number(params.get('exposure') ?? 1);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(fov, window.innerWidth / window.innerHeight, 0.4, 2000);
+camera.position.set(eye[0], eye[1], eye[2]);
+camera.lookAt(look[0], look[1], look[2]);
+
+const sky = createSky(scene, renderer, preset);
+sky.follow(eye[0], eye[2]);
+
+const random = createRandom(seed);
+const t0 = performance.now();
+const city = buildCity(seed, random);
+const buildMs = performance.now() - t0;
+scene.add(city.group);
+
+renderer.compile(scene, camera);
+renderer.render(scene, camera);
+
+const census = [];
+city.group.children.forEach((child) => {
+  let n = 0, tris = 0;
+  child.traverse((o) => {
+    if (!o.isMesh && !o.isInstancedMesh) return;
+    n += 1;
+    const g = o.geometry;
+    if (!g) return;
+    const count = g.index ? g.index.count / 3 : g.attributes.position.count / 3;
+    tris += count * (o.isInstancedMesh ? o.count : 1);
+  });
+  census.push({ name: child.name || child.type, meshes: n, tris: Math.round(tris) });
+});
+let triangles = 0;
+scene.traverse((object) => {
+  if (object.isMesh || object.isInstancedMesh) {
+    const geometry = object.geometry;
+    if (!geometry) return;
+    const count = geometry.index ? geometry.index.count / 3 : geometry.attributes.position.count / 3;
+    triangles += count * (object.isInstancedMesh ? object.count : 1);
+  }
+});
+window.__diag = {
+  buildMs: Math.round(buildMs),
+  calls: renderer.info.render.calls,
+  drawnTriangles: renderer.info.render.triangles,
+  sceneTriangles: Math.round(triangles),
+  geometries: renderer.info.memory.geometries,
+  textures: renderer.info.memory.textures,
+  colliders: city.colliders.length,
+  signs: city.signs.length,
+  blocks: city.blocks.length,
+  census: census.sort((a, b) => b.tris - a.tris),
+};
+window.__scene = scene;
+window.__city = city;
+// NaN geometry hunt
+let nanCount = 0;
+const nanNames = [];
+let nanVerts = 0;
+scene.traverse((o) => {
+  if (!o.isMesh && !o.isInstancedMesh) return;
+  const a = o.geometry.attributes.position;
+  if (!a) return;
+  let hits = 0;
+  let first = '';
+  for (let i = 0; i < a.count && first.length < 160; i += 1) {
+    const x = a.getX(i), y = a.getY(i), z = a.getZ(i);
+    if (Number.isNaN(x) || Number.isNaN(y) || Number.isNaN(z)) {
+      hits += 1;
+      first += ` v${i}(${x},${y},${z}) `;
+    }
+  }
+  if (hits) {
+    nanCount += 1;
+    nanNames.push(`${o.name || o.type}::mat=${o.material?.name || '-'}|geo=${o.geometry.id}|src=${JSON.stringify(o.geometry.userData.sources)}|nanVerts=${hits}/${a.count}|${first}`);
+  }
+});
+window.__diag.nanMeshes = nanCount;
+window.__diag.nanNames = nanNames;
+window.__shotReady = true;
+</script>
+</body>
+</html>

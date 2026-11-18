@@ -1,53 +1,65 @@
-// Keyboard and pointer input. Held keys give a steering direction; one-shot presses (start or
-// restart, pause) are queued as bit flags and taken once by the loop, so a press between two
-// frames is never lost and never counted twice.
+// Input: WASD/arrows + mouse aim via pointer lock. One input snapshot per frame; main.js reads it.
+// Escape leaves pointer lock and pauses; there is no other UI that steals the keyboard.
+export function createInput(element) {
+  const keys = {};
+  const state = {
+    forward: false, back: false, left: false, right: false, run: false,
+    enter: false, exit: false, shoot: false,    restart: false, pause: false,
+    handbrake: false,
+    camYaw: 0, camPitch: 0, pointerLocked: false,
+    justShot: false, justEnter: false, justRestart: false, justPause: false,
+  };
+  let pointerLockRequested = false;
+  let mouseX = 0, mouseY = 0;
 
-export const ACTION_CONFIRM = 1;
-export const ACTION_PAUSE = 2;
+  function onKey(event, pressed) {
+    const code = event.code;
+    switch (code) {
+      case 'KeyW': case 'ArrowUp': state.forward = pressed; break;
+      case 'KeyS': case 'ArrowDown': state.back = pressed; break;
+      case 'KeyA': case 'ArrowLeft': state.left = pressed; break;
+      case 'KeyD': case 'ArrowRight': state.right = pressed; break;
+      case 'ShiftLeft': case 'ShiftRight': state.run = pressed; break;
+      case 'Space': if (pressed) state.handbrake = true; else state.handbrake = false; break;
+      case 'KeyF': if (pressed && !state.enter) { state.enter = true; state.justEnter = true; } else if (!pressed) state.enter = false; break;
+      case 'KeyX': if (pressed && !state.exit) { state.exit = true; state.justExit = true; } else if (!pressed) state.exit = false; break;
+      case 'KeyR': if (pressed && !state.restart) { state.restart = true; state.justRestart = true; } else if (!pressed) state.restart = false; break;
+      case 'KeyP': if (pressed && !state.pause) { state.pause = true; state.justPause = true; } else if (!pressed) state.pause = false; break;
+      case 'KeyQ': if (pressed) state.quit = true; break;
+      default:
+    }
+    if (code === 'KeyF' && pressed) element.requestPointerLock?.();
+  }
+  window.addEventListener('keydown', (e) => onKey(e, true));
+  window.addEventListener('keyup', (e) => onKey(e, false));
 
-const LEFT = new Set(['ArrowLeft', 'KeyA']);
-const RIGHT = new Set(['ArrowRight', 'KeyD']);
-const CONFIRM = new Set(['Space', 'Enter']);
-const PAUSE = new Set(['KeyP', 'Escape']);
-
-export function createInput(target) {
-  let left = false;
-  let right = false;
-  let actions = 0;
-
-  window.addEventListener('keydown', (event) => {
-    if (LEFT.has(event.code)) left = true;
-    else if (RIGHT.has(event.code)) right = true;
-    else if (CONFIRM.has(event.code)) {
-      if (!event.repeat) actions |= ACTION_CONFIRM;
-    } else if (PAUSE.has(event.code)) {
-      if (!event.repeat) actions |= ACTION_PAUSE;
-    } else return;
-    event.preventDefault();
+  window.addEventListener('mousedown', (e) => { if (e.button === 0) state.shoot = true; });
+  window.addEventListener('mouseup', (e) => { if (e.button === 0) state.shoot = false; });
+  window.addEventListener('mousemove', (e) => {
+    mouseX += e.movementX; mouseY += e.movementY;
   });
-  window.addEventListener('keyup', (event) => {
-    if (LEFT.has(event.code)) left = false;
-    else if (RIGHT.has(event.code)) right = false;
+  document.addEventListener('pointerlockchange', () => {
+    state.pointerLocked = document.pointerLockElement === element;
+    if (!state.pointerLocked) mouseX = mouseY = 0;
   });
-  // A key released while the tab is hidden never sends keyup: let go of everything on blur.
-  window.addEventListener('blur', () => {
-    left = false;
-    right = false;
-  });
-  target.addEventListener('pointerdown', () => {
-    actions |= ACTION_CONFIRM;
+  document.addEventListener('pointerlockerror', () => {
+    state.pointerLocked = false;
   });
 
   return {
-    /** -1 for left, 1 for right, 0 for neither or both. */
-    direction() {
-      return (right ? 1 : 0) - (left ? 1 : 0);
+    read() {
+      const sensitivity = 0.0018;
+      state.camYaw -= mouseX * sensitivity;
+      state.camPitch = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, state.camPitch - mouseY * sensitivity));
+      mouseX = 0; mouseY = 0;
+      state.justShot = false; state.justEnter = false; state.justExit = false; state.justRestart = false; state.justPause = false;
+      const shoot = state.shoot;
+      state.shoot = false;
+      return { ...state, shoot };
     },
-    /** The one-shot presses since the last call, as ACTION_* flags. */
-    takeActions() {
-      const taken = actions;
-      actions = 0;
-      return taken;
-    },
+    get state() { return state; },
+    requestPointerLock() { element.requestPointerLock?.(); },
+    exitPointerLock() { document.exitPointerLock?.(); },
+    isLocked() { return state.pointerLocked; },
   };
 }
