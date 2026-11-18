@@ -94,6 +94,7 @@ function carTypeMesh(type, count) {
   headGeo.setAttribute('position', new THREE.Float32BufferAttribute(headPts, 3));
   headGeo.computeVertexNormals();
   const headGlow = new THREE.MeshBasicMaterial({ color: 0xfff4ea, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
+  const headlights = instanced(headGeo, headGlow, Array(count).fill(new THREE.Matrix4()));
 
   const lightGeo = new THREE.BufferGeometry();
   lightGeo.setAttribute('position', new THREE.Float32BufferAttribute(lightPts, 3));

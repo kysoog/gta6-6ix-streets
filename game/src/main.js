@@ -30,7 +30,7 @@ let audioStarted = false;
 
 const city = buildCity(seed, createRandom(seed));
 const traffic = trafficRoutes();
-const world = createWorld(city, traffic);
+const world = createWorld(city, traffic, audio);
 
 render.setCity(city.group);
 render.setCars(world.cars);

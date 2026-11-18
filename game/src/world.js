@@ -6,7 +6,7 @@ import { Cars, CAR_TYPES } from './cars.js';
 
 export const TEAM = { PLAYER: 0, PED: 1, COP: 2 };
 
-export function createWorld(city, trafficRoutes) {
+export function createWorld(city, trafficRoutes, audio) {
   const colliders = city.colliders.slice();
   const pedRoutes = city.pedRoutes.slice();
   const cars = new Cars();
@@ -78,10 +78,11 @@ export function createWorld(city, trafficRoutes) {
       if (perBlock[ri] >= PEDS_PER_BLOCK) continue; // this block's ped budget is already spent
       perBlock[ri] += 1;
       const route = pedRoutes[ri];
-      const start = route[Math.floor(Math.random() * route.length)];
+      const si = Math.floor(Math.random() * route.length);
+      const start = route[si];
       peds.push({
         x: start.x, z: start.z, yaw: Math.random() * Math.PI * 2, speed: PEDS.walk,
-        route, routeIndex: ri,
+        route, routeIndex: si,
         state: 'walk', panic: 0, health: 40, team: TEAM.PED, radius: 0.34,
         money: Math.floor(15 * (0.7 + Math.random() * 0.9)),
       });
